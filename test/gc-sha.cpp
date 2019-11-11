@@ -1,0 +1,421 @@
+#include <emp-tool/emp-tool.h>
+#include "emp-ag2pc/emp-ag2pc.h"
+#include "sha.h"
+#include "sha-private.h"
+#include <stdio.h>
+#include <ctype.h>
+
+using namespace emp;
+using namespace std; 
+
+
+/* Define the SHA shift, rotate left, and rotate right macros */
+#define SHA256_SHR(bits,word)      ((word) >> (bits))
+#define SHA256_ROTL(bits,word)                         \
+  (((word) << (bits)) | ((word) >> (32-(bits))))
+#define SHA256_ROTR(bits,word)                         \
+  (((word) >> (bits)) | ((word) << (32-(bits))))
+
+/* Define the SHA SIGMA and sigma macros */
+#define SHA256_SIGMA0(word)   \
+  (SHA256_ROTR( 2,word) ^ SHA256_ROTR(13,word) ^ SHA256_ROTR(22,word))
+#define SHA256_SIGMA1(word)   \
+  (SHA256_ROTR( 6,word) ^ SHA256_ROTR(11,word) ^ SHA256_ROTR(25,word))
+#define SHA256_sigma0(word)   \
+  (SHA256_ROTR( 7,word) ^ SHA256_ROTR(18,word) ^ SHA256_SHR( 3,word))
+#define SHA256_sigma1(word)   \
+  (SHA256_ROTR(17,word) ^ SHA256_ROTR(19,word) ^ SHA256_SHR(10,word))
+
+// static uint32_t SHA256_H0[SHA256HashSize/4] = {
+//   0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
+//   0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19
+// };
+
+static int LENGTH_BITS = 32;
+static int MESSAGE_BLOCK_INDEX_BITS = 16;
+static int MESSAGE_BLOCK_BITS = 8;
+static int INT_BITS = 16;
+static int BYTE_BITS = 8;
+static int INTERMEDIATE_HASH_BITS = 32;
+static int INTERMEDIATE_HASH_LEN = SHA256HashSize/4;
+
+typedef struct EMP_SHA256_CONTEXT {
+  // uint32_t
+  Integer Intermediate_Hash[SHA256HashSize/4]; /* Message Digest */
+  // uint32_t
+  Integer Length_High;               /* Message length in bits */
+  // uint32_t 
+  Integer Length_Low;                /* Message length in bits */
+  // int_least16_t 
+  Integer Message_Block_Index;  /* Message_Block array index */
+                                      /* 512-bit message blocks */
+  // uint8_t 
+  Integer Message_Block[SHA256_Message_Block_Size];
+
+
+  // int 
+  Integer Computed;
+  // int 
+  Integer Corrupted;
+} EMP_SHA256_CONTEXT;
+
+void printInteger(Integer intToPrint, int bitSize) {
+  for (int i = bitSize -1; i >= 0; i--) {
+    cout << intToPrint[i].reveal();
+  }
+  return;
+}
+
+void printIntegerArray(Integer* intToPrint, int arraySize, int bitSize) {
+  for(int i = 0; i < arraySize; i++) {
+    printInteger(intToPrint[i], bitSize);
+    cout << ", ";
+  }
+  cout << endl;
+  return;
+}
+
+static int ALL = 0;
+static int Msg_Block = 1;
+static int Msg_Block_Index = 2;
+static int Msg_Interemdiate_Hash = 4;
+
+void printContext(EMP_SHA256_CONTEXT *context, int flag, string debugMsg) {
+  cout << debugMsg << endl;
+  if (flag == ALL || flag == Msg_Interemdiate_Hash) {
+    cout << "Interemdiate Hash " << endl;
+    printIntegerArray(context->Intermediate_Hash, INTERMEDIATE_HASH_LEN, 32);
+  }
+  if (flag == ALL) {
+    cout << "Length high " << endl;
+    printInteger(context->Length_High, LENGTH_BITS);
+    cout << endl;
+  }
+  if (flag == ALL) {
+    cout << "Length low " << endl;
+    printInteger(context->Length_Low, LENGTH_BITS);
+    cout << endl;
+  }  
+  if (flag == ALL || flag == Msg_Block_Index) { 
+    cout << "Message block index " << endl;
+    printInteger(context->Message_Block_Index, MESSAGE_BLOCK_INDEX_BITS);
+    cout << endl;
+  }
+  if (flag == ALL || flag == Msg_Block) {
+    cout << "Message block contents " << endl;
+    printIntegerArray(context->Message_Block, SHA256_Message_Block_Size, MESSAGE_BLOCK_BITS);
+  }
+}
+
+
+Integer SHA256_Reset(EMP_SHA256_CONTEXT *context, Integer H0[]) {
+  if (!context) return Integer(INT_BITS, shaNull, ALICE);
+
+  for(int i=0; i<SHA256_Message_Block_Size; i++) {
+    context->Message_Block[i] = Integer(MESSAGE_BLOCK_BITS, 0, ALICE);
+  }
+
+  context->Length_High = context->Length_Low = Integer(LENGTH_BITS, 0, ALICE);
+  context->Message_Block_Index = Integer(MESSAGE_BLOCK_INDEX_BITS, 0, ALICE);
+  context->Intermediate_Hash[0] = H0[0];
+  context->Intermediate_Hash[1] = H0[1];
+  context->Intermediate_Hash[2] = H0[2];
+  context->Intermediate_Hash[3] = H0[3];
+  context->Intermediate_Hash[4] = H0[4];
+  context->Intermediate_Hash[5] = H0[5];
+  context->Intermediate_Hash[6] = H0[6];
+  context->Intermediate_Hash[7] = H0[7];
+  for(int i = 8; i < SHA256HashSize/4; i++) {
+    context->Intermediate_Hash[i] = Integer(INTERMEDIATE_HASH_BITS, 0, ALICE);
+  }
+  context->Computed  = Integer(INT_BITS, 0, ALICE);
+  context->Corrupted = Integer(INT_BITS, shaSuccess, ALICE);
+
+  return Integer(INT_BITS, shaSuccess, ALICE);
+}
+
+Integer SHA256_AddLength(EMP_SHA256_CONTEXT *context, unsigned int length) {
+  Integer addTemp = context->Length_Low;
+  context->Length_Low = context->Length_Low + Integer(LENGTH_BITS, length, ALICE);
+  context->Length_High = context->Length_High.select((context->Length_Low < addTemp), (context->Length_High + Integer(LENGTH_BITS, 1, ALICE)));
+
+  Integer result = context->Corrupted.select(context->Length_High == Integer(LENGTH_BITS, 0, ALICE), Integer(LENGTH_BITS, shaInputTooLong, ALICE));  
+  context->Corrupted = context->Corrupted.select(context->Length_Low < addTemp, result);
+
+  return context->Corrupted;
+}
+
+static void SHA256_ProcessMessageBlock(EMP_SHA256_CONTEXT *context) {
+  static const uint32_t K[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b,
+    0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
+    0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7,
+    0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152,
+    0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+    0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+    0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
+    0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08,
+    0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f,
+    0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  };
+
+  // Convert K
+  Integer EMP_K[64];
+
+  for (int i = 0; i < 64; i++) {
+    EMP_K[i] = Integer(INTERMEDIATE_HASH_BITS, K[i], ALICE);
+  }
+
+  int        t, t4;                   /* Loop counter */
+  // 32 bits
+  Integer   temp1, temp2;            /* Temporary word value */
+  Integer   W[SHA256_Message_Block_Size];                   /* Word sequence */
+  // 32 bits
+  Integer   A, B, C, D, E, F, G, H;  /* Word buffers */
+
+  /*
+  * Initialize the first 16 words in the array W
+  */
+  Integer Resized_Message_Block[SHA256_Message_Block_Size];
+  for(int i = 0; i < SHA256_Message_Block_Size; i++) {
+    Resized_Message_Block[i] = context->Message_Block[i];
+    Resized_Message_Block[i].resize(INTERMEDIATE_HASH_BITS, false);
+  }
+  
+  for (t = t4 = 0; t < 16; t++, t4 += 4) {
+    W[t] = (Resized_Message_Block[t4] << 24) |
+            (Resized_Message_Block[t4+1] << 16) |
+            (Resized_Message_Block[t4+2] << 8) |
+            (Resized_Message_Block[t4+3]);
+  }
+ 
+  for (t = 16; t < 64; t++) {
+    W[t] = SHA256_sigma1(W[t-2]) + W[t-7] + SHA256_sigma0(W[t-15]) + W[t-16];
+    A = context->Intermediate_Hash[0];
+    B = context->Intermediate_Hash[1];
+    C = context->Intermediate_Hash[2];
+    D = context->Intermediate_Hash[3];
+    E = context->Intermediate_Hash[4];
+    F = context->Intermediate_Hash[5];
+    G = context->Intermediate_Hash[6];
+    H = context->Intermediate_Hash[7];
+  }
+  for (t = 0; t < 64; t++) {
+    temp1 = H + SHA256_SIGMA1(E) + SHA_Ch(E,F,G) + EMP_K[t] + W[t];
+    temp2 = SHA256_SIGMA0(A) + SHA_Maj(A,B,C);
+    H = G;
+    G = F;
+    F = E;
+    E = D + temp1;
+    D = C;
+    C = B;
+    B = A;
+    A = temp1 + temp2;
+  }
+  context->Intermediate_Hash[0] = context->Intermediate_Hash[0] + A;
+  context->Intermediate_Hash[1] = context->Intermediate_Hash[1] + B;
+  context->Intermediate_Hash[2] = context->Intermediate_Hash[2] + C;
+  context->Intermediate_Hash[3] = context->Intermediate_Hash[3] + D;
+  context->Intermediate_Hash[4] = context->Intermediate_Hash[4] + E;
+  context->Intermediate_Hash[5] = context->Intermediate_Hash[5] + F;
+  context->Intermediate_Hash[6] = context->Intermediate_Hash[6] + G;
+  context->Intermediate_Hash[7] = context->Intermediate_Hash[7] + H;
+  context->Message_Block_Index = Integer(MESSAGE_BLOCK_INDEX_BITS, 0, ALICE);
+}
+
+void deepCopyContext(EMP_SHA256_CONTEXT* context, EMP_SHA256_CONTEXT* contextCopy) {
+  for(int i = 0; i<SHA256HashSize/4; i++) {
+    contextCopy->Intermediate_Hash[i] = context->Intermediate_Hash[i];
+  }
+  contextCopy->Length_High = context->Length_High;
+  contextCopy->Length_Low = context->Length_Low;
+  contextCopy->Message_Block_Index = context->Message_Block_Index;
+
+  for(int i = 0; i<SHA256_Message_Block_Size; i++) {
+    contextCopy->Message_Block[i] = context->Message_Block[i];
+  }
+  contextCopy->Computed = context->Computed;
+  contextCopy->Corrupted = context->Corrupted;
+  return;
+}
+
+void selectContext(EMP_SHA256_CONTEXT* context, EMP_SHA256_CONTEXT* tempContext, Bit condition) {
+  for(int i = 0; i<SHA256HashSize/4; i++) {
+    context->Intermediate_Hash[i] = context->Intermediate_Hash[i].select(condition, tempContext->Intermediate_Hash[i]);
+  }
+  context->Length_High = context->Length_High.select(condition, tempContext->Length_High);
+  context->Length_Low = context->Length_Low.select(condition, tempContext->Length_Low);
+  context->Message_Block_Index = context->Message_Block_Index.select(condition, tempContext->Message_Block_Index);
+
+  for(int i = 0; i<SHA256_Message_Block_Size; i++) {
+    context->Message_Block[i] = context->Message_Block[i].select(condition, tempContext->Message_Block[i]);
+  }
+  context->Computed = context->Computed.select(condition, tempContext->Computed );
+  context->Corrupted = context->Corrupted.select(condition, tempContext->Corrupted);
+  return;
+}
+
+Integer SHA256_Input(EMP_SHA256_CONTEXT *context, Integer *message_array, unsigned int length) {
+  if (!context) return Integer(INT_BITS, shaNull, ALICE);
+  if (!length) return Integer(INT_BITS, shaSuccess, ALICE); // 
+  if (!message_array) return Integer(INT_BITS, shaNull, ALICE);
+
+  // TODO: Does error checking happen here?
+
+  // if (isTrue(context->Computed, INT_BITS)) {
+  //   return context->Corrupted = Integer(INT_BITS, shaStateError, ALICE);
+  // }
+  
+  // if (isTrue(context->Corrupted, INT_BITS)) {
+  //   return context->Corrupted;
+  // }
+
+  int count = 0;
+  context->Corrupted = context->Corrupted.select(context->Computed > Integer(INT_BITS, 0, ALICE), Integer(INT_BITS, shaStateError, ALICE));
+  
+  while (length--) {
+    for (int i = 0; i < SHA256_Message_Block_Size; i++) {   
+       context->Message_Block[i] = 
+         context->Message_Block[i].select(Integer(INT_BITS, i, ALICE) == context->Message_Block_Index, message_array[count]);
+    }
+    context->Message_Block_Index = context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE);
+    Integer addLengthResult = SHA256_AddLength(context, 8);
+    EMP_SHA256_CONTEXT tempContext;
+    deepCopyContext(context, &tempContext);
+    SHA256_ProcessMessageBlock(&tempContext); // Can we unconditionally run this? Do we just have to reveal this conditional?
+    selectContext(context, &tempContext, (addLengthResult == Integer(INT_BITS, shaSuccess, ALICE)) & 
+                  (SHA256_Message_Block_Size == count+1));
+
+    count++;
+  }
+  return context->Corrupted;
+}
+
+void SHA256_PadMessage(EMP_SHA256_CONTEXT *context, Integer Pad_Byte) {
+  Bit ifCondition = context->Message_Block_Index >= Integer(INT_BITS, SHA256_Message_Block_Size-8, ALICE);
+  for (int i = 0; i < SHA256_Message_Block_Size; i++) {
+      context->Message_Block[i] = 
+        context->Message_Block[i].select(Integer(INT_BITS, i, ALICE) == context->Message_Block_Index, Pad_Byte);
+  }
+  context->Message_Block_Index = context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE);
+  EMP_SHA256_CONTEXT ifContextObj;
+  EMP_SHA256_CONTEXT* ifContext = &ifContextObj;
+  deepCopyContext(context, ifContext);
+
+  for (int i = 0; i < SHA256_Message_Block_Size; i++) {
+    Bit blockCondition = ifContext->Message_Block_Index < Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, ALICE);
+    ifContext->Message_Block[i] = 
+      ifContext->Message_Block[i].select(blockCondition, Integer(MESSAGE_BLOCK_BITS, 0, ALICE));
+    ifContext->Message_Block_Index = 
+      ifContext->Message_Block_Index.select(blockCondition, ifContext->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE));
+  }
+  SHA256_ProcessMessageBlock(ifContext);
+  
+  // Else Condition
+  // TODO: Test this logical branch
+  selectContext(context, ifContext, ifCondition);
+  for (int i = 0; i < SHA256_Message_Block_Size; i++) {
+    Integer maxIndex = Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, ALICE) -
+                          Integer(MESSAGE_BLOCK_INDEX_BITS, 8, ALICE);
+    Bit startCondition = Integer(MESSAGE_BLOCK_INDEX_BITS, i , ALICE) >= context->Message_Block_Index;
+    Bit blockCondition = context->Message_Block_Index < maxIndex;
+    Bit condition = startCondition & blockCondition;
+
+    context->Message_Block[i] = 
+      context->Message_Block[i].select(condition, Integer(MESSAGE_BLOCK_BITS, 0, ALICE));
+    context->Message_Block_Index = 
+      context->Message_Block_Index.select(condition, context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE));
+  }
+  // TODO: Shift by regular int, then resize to 8 bits
+  context->Message_Block[56] = context->Length_High >> Integer(BYTE_BITS, 24, ALICE);
+  context->Message_Block[57] = context->Length_High >> Integer(BYTE_BITS, 16, ALICE);
+  context->Message_Block[58] = context->Length_High >> Integer(BYTE_BITS, 8, ALICE);
+  context->Message_Block[59] = context->Length_High;
+  context->Message_Block[60] = context->Length_Low >> Integer(BYTE_BITS, 24, ALICE);
+  context->Message_Block[61] = context->Length_Low >> Integer(BYTE_BITS, 16, ALICE);
+  context->Message_Block[62] = context->Length_Low >> Integer(BYTE_BITS, 8, ALICE);
+  context->Message_Block[63] = context->Length_Low;
+  SHA256_ProcessMessageBlock(context);
+  return;
+}
+
+
+void SHA256_Finalize(EMP_SHA256_CONTEXT *context, Integer Pad_Byte) {
+  int i;
+  SHA256_PadMessage(context, Pad_Byte);
+  for (i = 0; i < SHA256_Message_Block_Size; ++i) {
+    context->Message_Block[i] = Integer(MESSAGE_BLOCK_BITS, 0, ALICE);
+  }
+  context->Length_High = Integer(LENGTH_BITS, 0, ALICE);
+  context->Length_Low = Integer(LENGTH_BITS, 0, ALICE);
+  context->Computed = Integer(INT_BITS, 1, ALICE);
+  return;
+}
+
+
+Integer SHA256_Result(EMP_SHA256_CONTEXT *context, Integer *Message_Digest) {
+  if (!context) return Integer(INT_BITS, shaNull, ALICE);
+  if (!Message_Digest) return Integer(INT_BITS, shaNull, ALICE);
+  //if (isTrue(context->Corrupted, INT_BITS)) return context->Corrupted; // TODO: Handle error conditions?
+  EMP_SHA256_CONTEXT tempContext; 
+  deepCopyContext(context, &tempContext);
+  SHA256_Finalize(&tempContext, Integer(BYTE_BITS, 0x80, ALICE));
+  selectContext(context, &tempContext, context->Computed == Integer(INT_BITS, 0, ALICE));
+
+  for (int i = 0; i < SHA256HashSize; i++) {
+    Message_Digest[i] =  (context->Intermediate_Hash[i>>2] >> 8 * ( 3 - ( i & 0x03 ) ));
+  }
+  return Integer(INT_BITS, shaSuccess, ALICE);
+}
+
+void printHash(Integer* Message_Digest) {
+  cout << "Printing output hash: " << endl;
+  for (int i =0; i < SHA256HashSize; i++) {
+    for (int j =7; j >= 0; j--) {
+      cout << Message_Digest[i][j].reveal();
+    }
+    cout << ", ";
+  }
+}
+
+int main() {
+
+  setup_plain_prot(false, "gc_sha2.circuit.txt");
+
+  // Initial Hash Values in EMP Integers 
+  // NOTE: EMP integers have to be within setup_plain_prot or else it segfaults!
+  Integer SHA256_Initial_H[SHA256HashSize/4] = {
+      Integer(32, "1779033703", ALICE),
+      Integer(32, "3144134277", ALICE),
+      Integer(32, "1013904242", ALICE),
+      Integer(32, "2773480762", ALICE),
+      Integer(32, "1359893119", ALICE),
+      Integer(32, "2600822924", ALICE),
+      Integer(32, "528734635", ALICE),
+      Integer(32, "1541459225", ALICE)
+  };
+
+  EMP_SHA256_CONTEXT sha;
+
+  Integer err = SHA256_Reset(&sha, SHA256_Initial_H);
+  int inputLength = 1;
+  Integer input[inputLength];
+  for (int i = 0; i < inputLength; i++) {
+    input[i] = Integer(8, 49, ALICE);
+  } 
+
+  err = SHA256_Input(&sha, input, inputLength);
+
+  Integer Message_Digest_Buf[SHA256HashSize];
+  Integer *Message_Digest = Message_Digest_Buf;
+
+  err = SHA256_Result(&sha, Message_Digest);
+  printHash(Message_Digest);
+
+  finalize_plain_prot();
+  
+  return 0;
+}

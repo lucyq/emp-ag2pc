@@ -1,4 +1,5 @@
 #include <emp-tool/emp-tool.h>
+#include "emp-tool/utils/hash.h"
 #include "emp-ag2pc/emp-ag2pc.h"
 #include "sha.h"
 #include "sha-private.h"
@@ -25,11 +26,6 @@ using namespace std;
   (SHA256_ROTR( 7,word) ^ SHA256_ROTR(18,word) ^ SHA256_SHR( 3,word))
 #define SHA256_sigma1(word)   \
   (SHA256_ROTR(17,word) ^ SHA256_ROTR(19,word) ^ SHA256_SHR(10,word))
-
-// static uint32_t SHA256_H0[SHA256HashSize/4] = {
-//   0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
-//   0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19
-// };
 
 static int LENGTH_BITS = 32;
 static int MESSAGE_BLOCK_INDEX_BITS = 16;
@@ -59,6 +55,10 @@ typedef struct EMP_SHA256_CONTEXT {
   Integer Corrupted;
 } EMP_SHA256_CONTEXT;
 
+
+/* * * * * * * * * * * * 
+ *  D E B U G G I N G  *
+ * * * * * * * * * * * */
 void printInteger(Integer intToPrint, int bitSize) {
   for (int i = bitSize -1; i >= 0; i--) {
     cout << intToPrint[i].reveal();
@@ -108,7 +108,22 @@ void printContext(EMP_SHA256_CONTEXT *context, int flag, string debugMsg) {
 }
 
 
-Integer SHA256_Reset(EMP_SHA256_CONTEXT *context, Integer H0[]) {
+/* * * * * * * * * * 
+ *  S H A   2 5 6  *
+ * * * * * * * * * */
+Integer SHA256_Reset(EMP_SHA256_CONTEXT *context) {
+    // Initial Hash Values in EMP Integers 
+  // NOTE: EMP integers have to be within setup_plain_prot or else it segfaults!
+  Integer H0[SHA256HashSize/4] = {
+      Integer(32, "1779033703", PUBLIC),
+      Integer(32, "3144134277", PUBLIC),
+      Integer(32, "1013904242", PUBLIC),
+      Integer(32, "2773480762", PUBLIC),
+      Integer(32, "1359893119", PUBLIC),
+      Integer(32, "2600822924", PUBLIC),
+      Integer(32, "528734635", PUBLIC),
+      Integer(32, "1541459225", PUBLIC)
+  };
   if (!context) return Integer(INT_BITS, shaNull, ALICE);
 
   for(int i=0; i<SHA256_Message_Block_Size; i++) {
@@ -306,20 +321,20 @@ void SHA256_PadMessage(EMP_SHA256_CONTEXT *context, Integer Pad_Byte) {
   deepCopyContext(context, ifContext);
 
   for (int i = 0; i < SHA256_Message_Block_Size; i++) {
+    Bit messageBlockCondition = ifContext->Message_Block_Index == Integer(MESSAGE_BLOCK_INDEX_BITS, i, ALICE);
     Bit blockCondition = ifContext->Message_Block_Index < Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, ALICE);
+    Bit overallCondition = messageBlockCondition & blockCondition;
     ifContext->Message_Block[i] = 
-      ifContext->Message_Block[i].select(blockCondition, Integer(MESSAGE_BLOCK_BITS, 0, ALICE));
+      ifContext->Message_Block[i].select(overallCondition, Integer(MESSAGE_BLOCK_BITS, 0, ALICE));
     ifContext->Message_Block_Index = 
-      ifContext->Message_Block_Index.select(blockCondition, ifContext->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE));
+      ifContext->Message_Block_Index.select(overallCondition, ifContext->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE));
   }
   SHA256_ProcessMessageBlock(ifContext);
   
-  // Else Condition
-  // TODO: Test this logical branch
   selectContext(context, ifContext, ifCondition);
+  
   for (int i = 0; i < SHA256_Message_Block_Size; i++) {
-    Integer maxIndex = Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, ALICE) -
-                          Integer(MESSAGE_BLOCK_INDEX_BITS, 8, ALICE);
+    Integer maxIndex = Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size-8, ALICE);
     Bit startCondition = Integer(MESSAGE_BLOCK_INDEX_BITS, i , ALICE) >= context->Message_Block_Index;
     Bit blockCondition = context->Message_Block_Index < maxIndex;
     Bit condition = startCondition & blockCondition;
@@ -330,13 +345,13 @@ void SHA256_PadMessage(EMP_SHA256_CONTEXT *context, Integer Pad_Byte) {
       context->Message_Block_Index.select(condition, context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE));
   }
   // TODO: Shift by regular int, then resize to 8 bits
-  context->Message_Block[56] = context->Length_High >> Integer(BYTE_BITS, 24, ALICE);
-  context->Message_Block[57] = context->Length_High >> Integer(BYTE_BITS, 16, ALICE);
-  context->Message_Block[58] = context->Length_High >> Integer(BYTE_BITS, 8, ALICE);
+  context->Message_Block[56] = context->Length_High >> Integer(BYTE_BITS, 24, PUBLIC);
+  context->Message_Block[57] = context->Length_High >> Integer(BYTE_BITS, 16, PUBLIC);
+  context->Message_Block[58] = context->Length_High >> Integer(BYTE_BITS, 8, PUBLIC);
   context->Message_Block[59] = context->Length_High;
-  context->Message_Block[60] = context->Length_Low >> Integer(BYTE_BITS, 24, ALICE);
-  context->Message_Block[61] = context->Length_Low >> Integer(BYTE_BITS, 16, ALICE);
-  context->Message_Block[62] = context->Length_Low >> Integer(BYTE_BITS, 8, ALICE);
+  context->Message_Block[60] = context->Length_Low >> Integer(BYTE_BITS, 24, PUBLIC);
+  context->Message_Block[61] = context->Length_Low >> Integer(BYTE_BITS, 16, PUBLIC);
+  context->Message_Block[62] = context->Length_Low >> Integer(BYTE_BITS, 8, PUBLIC);
   context->Message_Block[63] = context->Length_Low;
   SHA256_ProcessMessageBlock(context);
   return;
@@ -371,6 +386,9 @@ Integer SHA256_Result(EMP_SHA256_CONTEXT *context, Integer *Message_Digest) {
   return Integer(INT_BITS, shaSuccess, ALICE);
 }
 
+/* * * * * * * * * *
+ *  T E S T I N G  *
+ * * * * * * * * * */
 void printHash(Integer* Message_Digest) {
   cout << "Printing output hash: " << endl;
   for (int i =0; i < SHA256HashSize; i++) {
@@ -381,41 +399,81 @@ void printHash(Integer* Message_Digest) {
   }
 }
 
-int main() {
+void print_uint8_t(uint8_t n) {
+  bitset<8> x(n);
+  cout << x;
+}
 
-  setup_plain_prot(false, "gc_sha2.circuit.txt");
+void printSSLHash(uint8_t* sslHash, int arraySize) {
+  for(int i = 0; i < arraySize; i++) {
+    print_uint8_t(sslHash[i]);
+    cout << ", ";
+  }
+  cout << endl;
+  return;
+}
 
-  // Initial Hash Values in EMP Integers 
-  // NOTE: EMP integers have to be within setup_plain_prot or else it segfaults!
-  Integer SHA256_Initial_H[SHA256HashSize/4] = {
-      Integer(32, "1779033703", ALICE),
-      Integer(32, "3144134277", ALICE),
-      Integer(32, "1013904242", ALICE),
-      Integer(32, "2773480762", ALICE),
-      Integer(32, "1359893119", ALICE),
-      Integer(32, "2600822924", ALICE),
-      Integer(32, "528734635", ALICE),
-      Integer(32, "1541459225", ALICE)
-  };
+bool compareHash(uint8_t* sslHash, Integer* empHash) {
+  for (int i =0; i < SHA256HashSize; i++) {
+    bitset<8> sslBitset(sslHash[i]);
+    for (int j = 7; j >= 0; j--) {
+      if(empHash[i][j].reveal() != sslBitset[j]) {
+        cout << "False" << endl;
+        return false;
+      }
+    }
+  }
+  cout << "True" << endl;
+  return true;
+}
 
+void testInput(char* str, int length) {
+
+  /* 2 PC */
   EMP_SHA256_CONTEXT sha;
+  Integer err = SHA256_Reset(&sha);
 
-  Integer err = SHA256_Reset(&sha, SHA256_Initial_H);
-  int inputLength = 1;
-  Integer input[inputLength];
-  for (int i = 0; i < inputLength; i++) {
-    input[i] = Integer(8, 49, ALICE);
-  } 
-
-  err = SHA256_Input(&sha, input, inputLength);
-
+  Integer input[length];
+  for (int i = 0; i < length; i++) {
+    input[i] = Integer(8, str[i], ALICE);
+  }
+  err = SHA256_Input(&sha, input, length);
   Integer Message_Digest_Buf[SHA256HashSize];
   Integer *Message_Digest = Message_Digest_Buf;
 
   err = SHA256_Result(&sha, Message_Digest);
-  printHash(Message_Digest);
 
+
+  /* OpenSSL */
+  uint8_t digest[32];
+  Hash::hash_once(&digest, str, length);
+
+  compareHash(digest, Message_Digest);
+}
+
+int main() {
+
+  setup_plain_prot(false, "gc_sha2.circuit.txt");
+
+  // Test strings of 1^len
+  for (int len = 1; len <= 10; len++) {
+    cout << "length: " << len << endl;
+    char input[len];
+    for (int j = 0; j < len; j++) {
+      input[j] = '1';
+    }
+    testInput(input, len);
+    cout << endl;
+  }
+
+// testInput("abc", 3);
+
+// testInput("Hello, world!", 12);
+
+// testInput("Hello, world!A", 13);
+  
   finalize_plain_prot();
   
   return 0;
 }
+

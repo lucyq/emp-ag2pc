@@ -135,28 +135,12 @@ void printContext(SHA256Context *context, int flag, string debugMsg) {
 }
 
 
-// static uint32_t addTemp;
-// #define SHA224_256AddLength(context, length)               \
-//   (addTemp = (context)->Length_Low, (context)->Corrupted = \
-//     (((context)->Length_Low += (length)) < addTemp) &&     \
-//     (++(context)->Length_High == 0) ? shaInputTooLong :    \
-//                                       (context)->Corrupted )
-int SHA224_256AddLength(SHA256Context *context, int length) {
-  uint32_t addTemp = context->Length_Low;
-  // context->Corrupted = context->Length_Low + length
-
-  // context->Length_High += 1;
-  context->Length_Low += length;
-
-
-  if (context->Length_Low < addTemp) {
-    context->Length_High++;
-    if (context->Length_High == 0) {
-      return context->Corrupted = shaInputTooLong;
-    }
-  } 
-  return context->Corrupted;
-}
+static uint32_t addTemp;
+#define SHA224_256AddLength(context, length)               \
+  (addTemp = (context)->Length_Low, (context)->Corrupted = \
+    (((context)->Length_Low += (length)) < addTemp) &&     \
+    (++(context)->Length_High == 0) ? shaInputTooLong :    \
+                                      (context)->Corrupted )
 
 /*
  * SHA256Reset
@@ -476,7 +460,6 @@ static void SHA224_256PadMessage(SHA256Context *context,
     context->Message_Block[context->Message_Block_Index++] = Pad_Byte;
     while (context->Message_Block_Index < SHA256_Message_Block_Size)
       context->Message_Block[context->Message_Block_Index++] = 0;
-    // TO BE TESTED DEBUG
     SHA224_256ProcessMessageBlock(context);
   } else
     context->Message_Block[context->Message_Block_Index++] = Pad_Byte;
@@ -525,12 +508,9 @@ int i;
   if (!context->Computed) {
     SHA224_256Finalize(context, 0x80);
   }
-  // printContext(context, ALL, "After finalize");
   for (i = 0; i < HashSize; ++i)
     Message_Digest[i] = (uint8_t)
       (context->Intermediate_Hash[i>>2] >> 8 * ( 3 - ( i & 0x03 ) ));
-  // cout << "Interemdiate hash of context at result after FINALIZE and LOOP \n";
-  // printIntegerArray(Message_Digest, 64);
   return shaSuccess;
 }
 
@@ -545,15 +525,12 @@ void printstr(const char *str, int len)
 }
 
 
-void testInput(const char* inputArray, char* outputArray, int inputLen) {
-  static const char hexdigits[ ] = "0123456789ABCDEF";
-
+void testInput(const char* inputArray, int inputLen) {
+  
   uint8_t Message_Digest_Buf[USHAMaxHashSize];
   uint8_t *Message_Digest = Message_Digest_Buf;
   SHA256Context sha;
   int err;
-  char hashResult[64];
-  int count = 0;
 
   // initialize
   SHA256Reset(&sha);
@@ -572,51 +549,21 @@ void testInput(const char* inputArray, char* outputArray, int inputLen) {
   }
 
   // test result
-
-  // for(int i = 0; i < 32; i++) {
-  //   putchar(hexdigits[(Message_Digest[i] >> 4) & 0xF]);
-  //   hashResult[count] = hexdigits[(Message_Digest[i] >> 4) & 0xF];
-  //   count++;
-  //   putchar(hexdigits[Message_Digest[i] & 0xF]);
-  //   hashResult[count] = hexdigits[Message_Digest[i] & 0xF];
-  //   count++;
-  // }
   printf("Output binary \n");
   printIntegerArray(Message_Digest, 32);
   printf("\n");
 
-
-  // for (int i = 0; i < 64; i++) {
-  //   if (outputArray[i] != hashResult[i]) {
-  //     printf("OUTPUT ERROR!!!!!\n");
-  //     return;
-  //   }
-  // }
-
-  // printf("Output was correct!\n");
   return;
 }
 
 int main() {
-
-	// char char_array[64];
-
-	// printf("testing: %s\n", "TESTING!\n");
-	// string output = "1CFFE26786771001CF767FC7C0CE1C3029060238D3225EA0C9EDE740954EA892";
-	// strcpy(char_array, output.c_str());
-	// testInput("TESTING!", (char*)char_array, 8);
-  int inputLength = 56;
+  int inputLength = 128;
   char in[inputLength];
   char* input = in;
   for (int i = 0; i < inputLength; i++) {
     input[i] = '1';
   }
 
-	char char_array2[64];
-	// printf("testing: %s\n", input->c_str());
-	string output2 = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD";
-	strcpy(char_array2, output2.c_str());
-	testInput(input, (char*)char_array2, inputLength);
-
+	testInput(input, inputLength);
   return 0;
 }

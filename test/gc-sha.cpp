@@ -288,23 +288,23 @@ Integer SHA256_Input(EMP_SHA256_CONTEXT *context, Integer *message_array, unsign
   //   return context->Corrupted;
   // }
 
-  int count = 0;
   context->Corrupted = context->Corrupted.select(context->Computed > Integer(INT_BITS, 0, ALICE), Integer(INT_BITS, shaStateError, ALICE));
   
   while (length--) {
     for (int i = 0; i < SHA256_Message_Block_Size; i++) {   
        context->Message_Block[i] = 
-         context->Message_Block[i].select(Integer(INT_BITS, i, ALICE) == context->Message_Block_Index, message_array[count]);
+         context->Message_Block[i].select(Integer(INT_BITS, i, ALICE) == context->Message_Block_Index, *message_array);
     }
     context->Message_Block_Index = context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE);
     Integer addLengthResult = SHA256_AddLength(context, 8);
     EMP_SHA256_CONTEXT tempContext;
     deepCopyContext(context, &tempContext);
+  
     SHA256_ProcessMessageBlock(&tempContext); // Can we unconditionally run this? Do we just have to reveal this conditional?
     selectContext(context, &tempContext, (addLengthResult == Integer(INT_BITS, shaSuccess, ALICE)) & 
-                  (SHA256_Message_Block_Size == count+1));
+                  (context->Message_Block_Index == Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, PUBLIC)));
 
-    count++;
+    message_array++;
   }
   return context->Corrupted;
 }
@@ -418,12 +418,10 @@ bool compareHash(uint8_t* sslHash, Integer* empHash) {
     bitset<8> sslBitset(sslHash[i]);
     for (int j = 7; j >= 0; j--) {
       if(empHash[i][j].reveal() != sslBitset[j]) {
-        cout << "False" << endl;
         return false;
       }
     }
   }
-  cout << "True" << endl;
   return true;
 }
 
@@ -443,37 +441,38 @@ void testInput(char* str, int length) {
 
   err = SHA256_Result(&sha, Message_Digest);
 
-
   /* OpenSSL */
   uint8_t digest[32];
   Hash::hash_once(&digest, str, length);
-
-  compareHash(digest, Message_Digest);
+  bool success = compareHash(digest, Message_Digest);
+  if(!success) {
+    cout << "Failed test with str: " << str << endl;
+  }
+  
 }
 
 int main() {
 
   setup_plain_prot(false, "gc_sha2.circuit.txt");
 
+  char allChars[256];
+  for (int thisChar = 0; thisChar < 256; thisChar++) {
+    allChars[thisChar] = thisChar;
+  }
+  testInput((char*)"abc", 3);
+  testInput((char*)"Hello, world!", 12);
+  testInput(allChars, 256);
+
   // Test strings of 1^len
-  for (int len = 1; len <= 10; len++) {
-    cout << "length: " << len << endl;
+  for (int len = 900; len <= 950; len++) {
     char input[len];
     for (int j = 0; j < len; j++) {
       input[j] = '1';
     }
     testInput(input, len);
-    cout << endl;
   }
-
-// testInput("abc", 3);
-
-// testInput("Hello, world!", 12);
-
-// testInput("Hello, world!A", 13);
   
-  finalize_plain_prot();
-  
+  finalize_plain_prot();  
   return 0;
 }
 

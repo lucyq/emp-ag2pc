@@ -17,7 +17,7 @@ using namespace std;
 #define SHA256_ROTR(bits,word)                         \
   (((word) >> (bits)) | ((word) << (32-(bits))))
 
-/* Define the SHA SIGMA and sigma macros */
+// /* Define the SHA SIGMA and sigma macros */
 #define SHA256_SIGMA0(word)   \
   (SHA256_ROTR( 2,word) ^ SHA256_ROTR(13,word) ^ SHA256_ROTR(22,word))
 #define SHA256_SIGMA1(word)   \
@@ -26,20 +26,6 @@ using namespace std;
   (SHA256_ROTR( 7,word) ^ SHA256_ROTR(18,word) ^ SHA256_SHR( 3,word))
 #define SHA256_sigma1(word)   \
   (SHA256_ROTR(17,word) ^ SHA256_ROTR(19,word) ^ SHA256_SHR(10,word))
-
-/*
- * Add "length" to the length.
- * Set Corrupted when overflow has occurred.
- */
-// static uint32_t addTemp;
-// #define SHA224_256AddLength(context, length)               \
-//   (addTemp = (context)->Length_Low, (context)->Corrupted = \
-//     (((context)->Length_Low += (length)) < addTemp) &&     \
-//     (++(context)->Length_High == 0) ? shaInputTooLong :    \
-//                                       (context)->Corrupted )
-
-
-
 
 
 /* Local Function Prototypes */

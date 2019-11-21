@@ -35,6 +35,7 @@ static int BYTE_BITS = 8;
 static int INTERMEDIATE_HASH_BITS = 32;
 static int INTERMEDIATE_HASH_LEN = SHA256HashSize/4;
 
+
 typedef struct EMP_SHA256_CONTEXT {
   // uint32_t
   Integer Intermediate_Hash[SHA256HashSize/4]; /* Message Digest */
@@ -124,14 +125,14 @@ Integer SHA256_Reset(EMP_SHA256_CONTEXT *context) {
       Integer(32, "528734635", PUBLIC),
       Integer(32, "1541459225", PUBLIC)
   };
-  if (!context) return Integer(INT_BITS, shaNull, ALICE);
+  if (!context) return Integer(INT_BITS, shaNull, PUBLIC);
 
   for(int i=0; i<SHA256_Message_Block_Size; i++) {
-    context->Message_Block[i] = Integer(MESSAGE_BLOCK_BITS, 0, ALICE);
+    context->Message_Block[i] = Integer(MESSAGE_BLOCK_BITS, 0, PUBLIC);
   }
 
-  context->Length_High = context->Length_Low = Integer(LENGTH_BITS, 0, ALICE);
-  context->Message_Block_Index = Integer(MESSAGE_BLOCK_INDEX_BITS, 0, ALICE);
+  context->Length_High = context->Length_Low = Integer(LENGTH_BITS, 0, PUBLIC);
+  context->Message_Block_Index = Integer(MESSAGE_BLOCK_INDEX_BITS, 0, PUBLIC);
   context->Intermediate_Hash[0] = H0[0];
   context->Intermediate_Hash[1] = H0[1];
   context->Intermediate_Hash[2] = H0[2];
@@ -141,20 +142,20 @@ Integer SHA256_Reset(EMP_SHA256_CONTEXT *context) {
   context->Intermediate_Hash[6] = H0[6];
   context->Intermediate_Hash[7] = H0[7];
   for(int i = 8; i < SHA256HashSize/4; i++) {
-    context->Intermediate_Hash[i] = Integer(INTERMEDIATE_HASH_BITS, 0, ALICE);
+    context->Intermediate_Hash[i] = Integer(INTERMEDIATE_HASH_BITS, 0, PUBLIC);
   }
-  context->Computed  = Integer(INT_BITS, 0, ALICE);
-  context->Corrupted = Integer(INT_BITS, shaSuccess, ALICE);
+  context->Computed  = Integer(INT_BITS, 0, PUBLIC);
+  context->Corrupted = Integer(INT_BITS, shaSuccess, PUBLIC);
 
-  return Integer(INT_BITS, shaSuccess, ALICE);
+  return Integer(INT_BITS, shaSuccess, PUBLIC);
 }
 
 Integer SHA256_AddLength(EMP_SHA256_CONTEXT *context, unsigned int length) {
   Integer addTemp = context->Length_Low;
-  context->Length_Low = context->Length_Low + Integer(LENGTH_BITS, length, ALICE);
-  context->Length_High = context->Length_High.select((context->Length_Low < addTemp), (context->Length_High + Integer(LENGTH_BITS, 1, ALICE)));
+  context->Length_Low = context->Length_Low + Integer(LENGTH_BITS, length, PUBLIC);
+  context->Length_High = context->Length_High.select((context->Length_Low < addTemp), (context->Length_High + Integer(LENGTH_BITS, 1, PUBLIC)));
 
-  Integer result = context->Corrupted.select(context->Length_High == Integer(LENGTH_BITS, 0, ALICE), Integer(LENGTH_BITS, shaInputTooLong, ALICE));  
+  Integer result = context->Corrupted.select(context->Length_High == Integer(LENGTH_BITS, 0, PUBLIC), Integer(LENGTH_BITS, shaInputTooLong, PUBLIC));  
   context->Corrupted = context->Corrupted.select(context->Length_Low < addTemp, result);
 
   return context->Corrupted;
@@ -181,7 +182,7 @@ static void SHA256_ProcessMessageBlock(EMP_SHA256_CONTEXT *context) {
   Integer EMP_K[64];
 
   for (int i = 0; i < 64; i++) {
-    EMP_K[i] = Integer(INTERMEDIATE_HASH_BITS, K[i], ALICE);
+    EMP_K[i] = Integer(INTERMEDIATE_HASH_BITS, K[i], PUBLIC);
   }
 
   int        t, t4;                   /* Loop counter */
@@ -238,7 +239,7 @@ static void SHA256_ProcessMessageBlock(EMP_SHA256_CONTEXT *context) {
   context->Intermediate_Hash[5] = context->Intermediate_Hash[5] + F;
   context->Intermediate_Hash[6] = context->Intermediate_Hash[6] + G;
   context->Intermediate_Hash[7] = context->Intermediate_Hash[7] + H;
-  context->Message_Block_Index = Integer(MESSAGE_BLOCK_INDEX_BITS, 0, ALICE);
+  context->Message_Block_Index = Integer(MESSAGE_BLOCK_INDEX_BITS, 0, PUBLIC);
 }
 
 void deepCopyContext(EMP_SHA256_CONTEXT* context, EMP_SHA256_CONTEXT* contextCopy) {
@@ -274,9 +275,9 @@ void selectContext(EMP_SHA256_CONTEXT* context, EMP_SHA256_CONTEXT* tempContext,
 }
 
 Integer SHA256_Input(EMP_SHA256_CONTEXT *context, Integer *message_array, unsigned int length) {
-  if (!context) return Integer(INT_BITS, shaNull, ALICE);
-  if (!length) return Integer(INT_BITS, shaSuccess, ALICE); // 
-  if (!message_array) return Integer(INT_BITS, shaNull, ALICE);
+  if (!context) return Integer(INT_BITS, shaNull, PUBLIC);
+  if (!length) return Integer(INT_BITS, shaSuccess, PUBLIC); // 
+  if (!message_array) return Integer(INT_BITS, shaNull, PUBLIC);
 
   // TODO: Does error checking happen here?
 
@@ -288,20 +289,20 @@ Integer SHA256_Input(EMP_SHA256_CONTEXT *context, Integer *message_array, unsign
   //   return context->Corrupted;
   // }
 
-  context->Corrupted = context->Corrupted.select(context->Computed > Integer(INT_BITS, 0, ALICE), Integer(INT_BITS, shaStateError, ALICE));
+  context->Corrupted = context->Corrupted.select(context->Computed > Integer(INT_BITS, 0, PUBLIC), Integer(INT_BITS, shaStateError, PUBLIC));
   
   while (length--) {
     for (int i = 0; i < SHA256_Message_Block_Size; i++) {   
        context->Message_Block[i] = 
-         context->Message_Block[i].select(Integer(INT_BITS, i, ALICE) == context->Message_Block_Index, *message_array);
+         context->Message_Block[i].select(Integer(INT_BITS, i, PUBLIC) == context->Message_Block_Index, *message_array);
     }
-    context->Message_Block_Index = context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE);
+    context->Message_Block_Index = context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, PUBLIC);
     Integer addLengthResult = SHA256_AddLength(context, 8);
     EMP_SHA256_CONTEXT tempContext;
     deepCopyContext(context, &tempContext);
   
     SHA256_ProcessMessageBlock(&tempContext); // Can we unconditionally run this? Do we just have to reveal this conditional?
-    selectContext(context, &tempContext, (addLengthResult == Integer(INT_BITS, shaSuccess, ALICE)) & 
+    selectContext(context, &tempContext, (addLengthResult == Integer(INT_BITS, shaSuccess, PUBLIC)) & 
                   (context->Message_Block_Index == Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, PUBLIC)));
 
     message_array++;
@@ -310,48 +311,48 @@ Integer SHA256_Input(EMP_SHA256_CONTEXT *context, Integer *message_array, unsign
 }
 
 void SHA256_PadMessage(EMP_SHA256_CONTEXT *context, Integer Pad_Byte) {
-  Bit ifCondition = context->Message_Block_Index >= Integer(INT_BITS, SHA256_Message_Block_Size-8, ALICE);
+  Bit ifCondition = context->Message_Block_Index >= Integer(INT_BITS, SHA256_Message_Block_Size-8, PUBLIC);
   for (int i = 0; i < SHA256_Message_Block_Size; i++) {
       context->Message_Block[i] = 
-        context->Message_Block[i].select(Integer(INT_BITS, i, ALICE) == context->Message_Block_Index, Pad_Byte);
+        context->Message_Block[i].select(Integer(INT_BITS, i, PUBLIC) == context->Message_Block_Index, Pad_Byte);
   }
-  context->Message_Block_Index = context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE);
+  context->Message_Block_Index = context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, PUBLIC);
   EMP_SHA256_CONTEXT ifContextObj;
   EMP_SHA256_CONTEXT* ifContext = &ifContextObj;
   deepCopyContext(context, ifContext);
 
   for (int i = 0; i < SHA256_Message_Block_Size; i++) {
-    Bit messageBlockCondition = ifContext->Message_Block_Index == Integer(MESSAGE_BLOCK_INDEX_BITS, i, ALICE);
-    Bit blockCondition = ifContext->Message_Block_Index < Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, ALICE);
+    Bit messageBlockCondition = ifContext->Message_Block_Index == Integer(MESSAGE_BLOCK_INDEX_BITS, i, PUBLIC);
+    Bit blockCondition = ifContext->Message_Block_Index < Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size, PUBLIC);
     Bit overallCondition = messageBlockCondition & blockCondition;
     ifContext->Message_Block[i] = 
-      ifContext->Message_Block[i].select(overallCondition, Integer(MESSAGE_BLOCK_BITS, 0, ALICE));
+      ifContext->Message_Block[i].select(overallCondition, Integer(MESSAGE_BLOCK_BITS, 0, PUBLIC));
     ifContext->Message_Block_Index = 
-      ifContext->Message_Block_Index.select(overallCondition, ifContext->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE));
+      ifContext->Message_Block_Index.select(overallCondition, ifContext->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, PUBLIC));
   }
   SHA256_ProcessMessageBlock(ifContext);
   
   selectContext(context, ifContext, ifCondition);
   
   for (int i = 0; i < SHA256_Message_Block_Size; i++) {
-    Integer maxIndex = Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size-8, ALICE);
-    Bit startCondition = Integer(MESSAGE_BLOCK_INDEX_BITS, i , ALICE) >= context->Message_Block_Index;
+    Integer maxIndex = Integer(MESSAGE_BLOCK_INDEX_BITS, SHA256_Message_Block_Size-8, PUBLIC);
+    Bit startCondition = Integer(MESSAGE_BLOCK_INDEX_BITS, i , PUBLIC) >= context->Message_Block_Index;
     Bit blockCondition = context->Message_Block_Index < maxIndex;
     Bit condition = startCondition & blockCondition;
 
     context->Message_Block[i] = 
-      context->Message_Block[i].select(condition, Integer(MESSAGE_BLOCK_BITS, 0, ALICE));
+      context->Message_Block[i].select(condition, Integer(MESSAGE_BLOCK_BITS, 0, PUBLIC));
     context->Message_Block_Index = 
-      context->Message_Block_Index.select(condition, context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, ALICE));
+      context->Message_Block_Index.select(condition, context->Message_Block_Index + Integer(MESSAGE_BLOCK_INDEX_BITS, 1, PUBLIC));
   }
-  // TODO: Shift by regular int, then resize to 8 bits
-  context->Message_Block[56] = context->Length_High >> Integer(BYTE_BITS, 24, PUBLIC);
-  context->Message_Block[57] = context->Length_High >> Integer(BYTE_BITS, 16, PUBLIC);
-  context->Message_Block[58] = context->Length_High >> Integer(BYTE_BITS, 8, PUBLIC);
+
+  context->Message_Block[56] = context->Length_High >> 24;
+  context->Message_Block[57] = context->Length_High >> 16;
+  context->Message_Block[58] = context->Length_High >> 8;
   context->Message_Block[59] = context->Length_High;
-  context->Message_Block[60] = context->Length_Low >> Integer(BYTE_BITS, 24, PUBLIC);
-  context->Message_Block[61] = context->Length_Low >> Integer(BYTE_BITS, 16, PUBLIC);
-  context->Message_Block[62] = context->Length_Low >> Integer(BYTE_BITS, 8, PUBLIC);
+  context->Message_Block[60] = context->Length_Low >> 24;
+  context->Message_Block[61] = context->Length_Low >> 16;
+  context->Message_Block[62] = context->Length_Low >> 8;
   context->Message_Block[63] = context->Length_Low;
   SHA256_ProcessMessageBlock(context);
   return;
@@ -362,28 +363,30 @@ void SHA256_Finalize(EMP_SHA256_CONTEXT *context, Integer Pad_Byte) {
   int i;
   SHA256_PadMessage(context, Pad_Byte);
   for (i = 0; i < SHA256_Message_Block_Size; ++i) {
-    context->Message_Block[i] = Integer(MESSAGE_BLOCK_BITS, 0, ALICE);
+    context->Message_Block[i] = Integer(MESSAGE_BLOCK_BITS, 0, PUBLIC);
   }
-  context->Length_High = Integer(LENGTH_BITS, 0, ALICE);
-  context->Length_Low = Integer(LENGTH_BITS, 0, ALICE);
-  context->Computed = Integer(INT_BITS, 1, ALICE);
+
+  // TODO: Do we need to do this?
+  context->Length_High = Integer(LENGTH_BITS, 0, PUBLIC);
+  context->Length_Low = Integer(LENGTH_BITS, 0, PUBLIC);
+  context->Computed = Integer(INT_BITS, 1, PUBLIC);
   return;
 }
 
 
 Integer SHA256_Result(EMP_SHA256_CONTEXT *context, Integer *Message_Digest) {
-  if (!context) return Integer(INT_BITS, shaNull, ALICE);
-  if (!Message_Digest) return Integer(INT_BITS, shaNull, ALICE);
+  if (!context) return Integer(INT_BITS, shaNull, PUBLIC);
+  if (!Message_Digest) return Integer(INT_BITS, shaNull, PUBLIC);
   //if (isTrue(context->Corrupted, INT_BITS)) return context->Corrupted; // TODO: Handle error conditions?
   EMP_SHA256_CONTEXT tempContext; 
   deepCopyContext(context, &tempContext);
-  SHA256_Finalize(&tempContext, Integer(BYTE_BITS, 0x80, ALICE));
-  selectContext(context, &tempContext, context->Computed == Integer(INT_BITS, 0, ALICE));
+  SHA256_Finalize(&tempContext, Integer(BYTE_BITS, 0x80, PUBLIC));
+  selectContext(context, &tempContext, context->Computed == Integer(INT_BITS, 0, PUBLIC));
 
   for (int i = 0; i < SHA256HashSize; i++) {
     Message_Digest[i] =  (context->Intermediate_Hash[i>>2] >> 8 * ( 3 - ( i & 0x03 ) ));
   }
-  return Integer(INT_BITS, shaSuccess, ALICE);
+  return Integer(INT_BITS, shaSuccess, PUBLIC);
 }
 
 /* * * * * * * * * *
@@ -455,7 +458,7 @@ int main() {
 
   setup_plain_prot(false, "gc_sha2.circuit.txt");
 
-  char allChars[256];
+   char allChars[256];
   for (int thisChar = 0; thisChar < 256; thisChar++) {
     allChars[thisChar] = thisChar;
   }

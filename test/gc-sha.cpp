@@ -3,8 +3,12 @@
 #include "emp-ag2pc/emp-ag2pc.h"
 #include "sha.h"
 #include "sha-private.h"
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 #include <stdio.h>
 #include <ctype.h>
+
+#include "test/single_execution.h"
 
 using namespace emp;
 using namespace std; 
@@ -56,6 +60,27 @@ typedef struct EMP_SHA256_CONTEXT {
   Integer Corrupted;
 } EMP_SHA256_CONTEXT;
 
+
+typedef struct EMP_HMAC_Context {
+EMP_SHA256_CONTEXT shaContext;
+
+Integer k_opad[SHA256_Message_Block_Size];
+// unsigned char k_opad[USHA_Max_Message_Block_Size];
+                        /* outer padding - key XORd with opad */
+ // int 
+  Integer Computed;
+  // int 
+  Integer Corrupted;
+  int hashSize;
+  int blockSize;
+
+} EMP_HMAC_Context;
+
+void initIntegerArray(Integer* intArray, int arraySize, int bitSize, int party=PUBLIC) {
+  for(int i=0; i<arraySize; i++) {
+    intArray[i] = Integer(bitSize, 0, party);
+  }
+}
 
 /* * * * * * * * * * * * 
  *  D E B U G G I N G  *
@@ -127,6 +152,7 @@ Integer SHA256_Reset(EMP_SHA256_CONTEXT *context) {
   };
   if (!context) return Integer(INT_BITS, shaNull, PUBLIC);
 
+  // Change to initArray DEBUG
   for(int i=0; i<SHA256_Message_Block_Size; i++) {
     context->Message_Block[i] = Integer(MESSAGE_BLOCK_BITS, 0, PUBLIC);
   }
@@ -389,6 +415,91 @@ Integer SHA256_Result(EMP_SHA256_CONTEXT *context, Integer *Message_Digest) {
   return Integer(INT_BITS, shaSuccess, PUBLIC);
 }
 
+Integer HMAC_Reset(EMP_HMAC_Context *context, Integer* key, int key_len)
+{
+  /* inner padding - key XORd with ipad */
+  Integer k_ipad[SHA256_Message_Block_Size];
+  initIntegerArray(k_ipad, SHA256_Message_Block_Size, BYTE_BITS);
+  /* temporary buffer when keylen > blocksize */
+  Integer tempKey[SHA256HashSize];
+  initIntegerArray(tempKey, SHA256HashSize, BYTE_BITS);
+
+  initIntegerArray(context->k_opad, SHA256_Message_Block_Size, BYTE_BITS);
+  // if (!context) return shaNull;
+  context->Computed = Integer(INT_BITS, 0, PUBLIC);
+  context->Corrupted = Integer(INT_BITS, shaSuccess, PUBLIC);
+
+  /*
+   * If key is longer than the hash blocksize,
+   * reset it to key = HASH(key).
+   */
+  if (key_len > SHA256_Message_Block_Size) {
+    EMP_SHA256_CONTEXT tcontext;
+    SHA256_Reset(&tcontext);
+    SHA256_Input(&tcontext, key, key_len);
+    SHA256_Result(&tcontext, tempKey);
+    // if (err != shaSuccess) return err;
+
+    key = tempKey;
+    key_len = SHA256HashSize;
+  }
+  int i;
+  for (i = 0; i < key_len; i++) {
+    k_ipad[i] = key[i] ^ Integer(BYTE_BITS, 0x36, PUBLIC);
+    context->k_opad[i] = key[i] ^ Integer(BYTE_BITS, 0x5c, PUBLIC);
+  }
+  /* remaining pad bytes are '\0' XOR'd with ipad and opad values */
+  for ( ; i < SHA256_Message_Block_Size; i++) {
+    k_ipad[i] = Integer(BYTE_BITS, 0x36, PUBLIC);
+    context->k_opad[i] = Integer(BYTE_BITS, 0x5c, PUBLIC);
+  }
+
+  /* perform inner hash */
+  /* init context for 1st pass */
+  // ret = SHA256Reset((SHA256Context*)&context->shaContext)
+  
+  Integer ret = SHA256_Reset(&context->shaContext) |
+      /* and start with inner pad */
+        SHA256_Input(&context->shaContext, k_ipad, SHA256_Message_Block_Size);
+  return context->Corrupted = ret;
+}
+
+Integer HMAC_Input(EMP_HMAC_Context *context, Integer* text, int text_len)
+{
+  // if (!context) return shaNull;
+  // if (context->Corrupted) return context->Corrupted;
+  // if (context->Computed) return context->Corrupted = shaStateError;
+  /* then text of datagram */
+  return context->Corrupted =
+    SHA256_Input(&context->shaContext, text, text_len);
+}
+
+Integer HMAC_Result(EMP_HMAC_Context *context, Integer* digest)
+{
+  // if (!context) return shaNull;
+  // if (context->Corrupted) return context->Corrupted;
+  // if (context->Computed) return context->Corrupted = shaStateError;
+
+  /* finish up 1st pass */
+  /* (Use digest here as a temporary buffer.) */
+  Integer ret =
+         SHA256_Result(&context->shaContext, digest) |
+         /* perform outer SHA */
+         /* init context for 2nd pass */
+         SHA256_Reset(&context->shaContext) |
+
+         /* start with outer pad */
+         SHA256_Input(&context->shaContext, context->k_opad, SHA256_Message_Block_Size) |
+
+         /* then results of 1st hash */
+         SHA256_Input(&context->shaContext, digest, SHA256HashSize) |
+         /* finish up 2nd pass */
+         SHA256_Result(&context->shaContext, digest);
+
+  context->Computed = Integer(INT_BITS, 1, PUBLIC);
+  return context->Corrupted = ret;
+}
+
 /* * * * * * * * * *
  *  T E S T I N G  *
  * * * * * * * * * */
@@ -424,7 +535,9 @@ bool compareHash(uint8_t* sslHash, Integer* empHash) {
         return false;
       }
     }
+    cout <<  sslBitset << ", ";
   }
+  cout << endl << "TRUE?" << endl;
   return true;
 }
 
@@ -454,27 +567,56 @@ void testInput(char* str, int length) {
   
 }
 
+void testHmac(char* message, int message_length, char* key, int key_length) {
+  /* HMAC test */
+  Integer intMsg[message_length];
+  for (int i = 0; i < message_length; i++) {
+    intMsg[i] = Integer(8, message[i], ALICE);
+  }
+  Integer intKey[key_length];
+  for (int i = 0; i < key_length; i++) {
+    intKey[i] = Integer(8, key[i], ALICE);
+  }
+  Integer digest_buf[SHA256HashSize];
+  Integer* digest = digest_buf;
+  EMP_HMAC_Context context;
+  HMAC_Reset(&context, intKey, key_length);
+  HMAC_Input(&context, intMsg, message_length);
+  HMAC_Result(&context, digest);
+  // printIntegerArray(digest, SHA256HashSize, 8);
+
+  // uint8_t result[SHA256HashSize];
+  // HMAC(EVP_sha256(), key, key_length, (const unsigned char*)message, message_length, result, NULL);
+  // compareHash(result, digest);
+}
+
 int main() {
 
-  setup_plain_prot(false, "gc_sha2.circuit.txt");
+  setup_plain_prot(true, "gc-hmac.circuit.txt");
 
-   char allChars[256];
-  for (int thisChar = 0; thisChar < 256; thisChar++) {
-    allChars[thisChar] = thisChar;
-  }
-  testInput((char*)"abc", 3);
-  testInput((char*)"Hello, world!", 12);
-  testInput(allChars, 256);
+  // char allChars[512];
+  // for (int thisChar = 0; thisChar < 512; thisChar++) {
+  //   allChars[thisChar] = thisChar%256;
+  // }
+  // testInput((char*)"abc", 3);
+  // testInput((char*)"Hello, world!", 12);
+  // testInput(allChars, 256);
 
-  // Test strings of 1^len
-  for (int len = 900; len <= 950; len++) {
+  int num = 32;
+  for (int len = num; len <= num; len++) {
     char input[len];
     for (int j = 0; j < len; j++) {
       input[j] = '1';
     }
-    testInput(input, len);
+    testHmac((char*) input, num, (char*) input, num);
+    // testInput(input, len);
   }
-  
+
+  // testHmac((char*)"ABC", 3, (char*)"3132333435363738", 16);
+  // testHmac(allChars, 512, allChars, 512);
+
+  // testInput(allChars, 512);
+
   finalize_plain_prot();  
   return 0;
 }

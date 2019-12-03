@@ -26,5 +26,5 @@ endmacro()
 # add_test (abit)
 # add_test (amortized_2pc) 
 add_test (gc-sha)
-add_test (sha256-impl)
-
+# add_test (sha256-impl)
+add_test (hmac-exe)

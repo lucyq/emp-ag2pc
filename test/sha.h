@@ -122,7 +122,6 @@ typedef struct HMACContext {
 /* SHA context */
 int hashSize;
 int blockSize;
-USHAContext shaContext;
 unsigned char k_opad[USHA_Max_Message_Block_Size];
                         /* outer padding - key XORd with opad */
     int Computed;               /* Is the MAC computed? */

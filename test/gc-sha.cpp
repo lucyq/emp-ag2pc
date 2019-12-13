@@ -104,11 +104,11 @@ void printIntegerArray(Integer* intToPrint, int arraySize, int bitSize) {
 static int ALL = 0;
 static int Msg_Block = 1;
 static int Msg_Block_Index = 2;
-static int Msg_Interemdiate_Hash = 4;
+static int Msg_Intermediate_Hash = 4;
 
 void printContext(EMP_SHA256_CONTEXT *context, int flag, string debugMsg) {
   cout << debugMsg << endl;
-  if (flag == ALL || flag == Msg_Interemdiate_Hash) {
+  if (flag == ALL || flag == Msg_Intermediate_Hash) {
     cout << "Interemdiate Hash " << endl;
     printIntegerArray(context->Intermediate_Hash, INTERMEDIATE_HASH_LEN, 32);
   }
@@ -509,8 +509,8 @@ void printHash(Integer* Message_Digest) {
     for (int j =7; j >= 0; j--) {
       cout << Message_Digest[i][j].reveal();
     }
-    cout << ", ";
   }
+  cout << endl;
 }
 
 void print_uint8_t(uint8_t n) {
@@ -575,7 +575,7 @@ void testHmac(char* message, int message_length, char* key, int key_length) {
   }
   Integer intKey[key_length];
   for (int i = 0; i < key_length; i++) {
-    intKey[i] = Integer(8, key[i], ALICE);
+    intKey[i] = Integer(8, key[i], BOB);
   }
   Integer digest_buf[SHA256HashSize];
   Integer* digest = digest_buf;
@@ -583,6 +583,7 @@ void testHmac(char* message, int message_length, char* key, int key_length) {
   HMAC_Reset(&context, intKey, key_length);
   HMAC_Input(&context, intMsg, message_length);
   HMAC_Result(&context, digest);
+  printHash(digest);
   // printIntegerArray(digest, SHA256HashSize, 8);
 
   // uint8_t result[SHA256HashSize];
@@ -602,18 +603,19 @@ int main() {
   // testInput((char*)"Hello, world!", 12);
   // testInput(allChars, 256);
 
-  int num = 32;
-  for (int len = num; len <= num; len++) {
-    char input[len];
-    for (int j = 0; j < len; j++) {
-      input[j] = '1';
-    }
-    testHmac((char*) input, num, (char*) input, num);
-    // testInput(input, len);
-  }
+  // int num = 32;
+  // for (int len = num; len <= num; len++) {
+  //   char input[len];
+  //   for (int j = 0; j < len; j++) {
+  //     input[j] = '1';
+  //   }
+  //   //testHmac((char*) input, num, (char*) input, num);
+  //   // testInput(input, len);
+  // }
 
-  // testHmac((char*)"ABC", 3, (char*)"3132333435363738", 16);
-  // testHmac(allChars, 512, allChars, 512);
+   testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
+   //testHmac(allChars, 512, allChars, 512);
+  // testInput((char*)"0", 1);
 
   // testInput(allChars, 512);
 

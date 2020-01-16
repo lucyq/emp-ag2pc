@@ -596,19 +596,20 @@ void testHmac(char* message, int message_length, char* key, int key_length) {
   Integer bitmask[BITMASK_LENGTH];
   Integer padding[BITMASK_LENGTH];
   Integer* mask = bitmask;
-  
-  for (int i = 0; i < actualMessageLength; i++) {
-    intMsg[i] = Integer(8, message[i], ALICE);
-  }
-  for (int i = 0; i < BITMASK_LENGTH; i++) {
-    padding[i] = Integer(8, key[i + message_length - BITMASK_LENGTH], ALICE); // TODO: Apparently Alice is inputting the key, but labels are backwards?
-  }
+  // Need to get BOB's input first :-/
   for (int i = 0; i < actualKeyLength; i++) {
     intKey[i] = Integer(8, key[i], BOB);
   }
   for (int i = 0; i < BITMASK_LENGTH; i++) {
-    bitmask[i] = Integer(8, message[i + key_length - BITMASK_LENGTH], BOB);
+    padding[i] = Integer(8, key[i + message_length - BITMASK_LENGTH], BOB);
   }
+  for (int i = 0; i < actualMessageLength; i++) {
+    intMsg[i] = Integer(8, message[i], ALICE);
+  }
+  for (int i = 0; i < BITMASK_LENGTH; i++) {
+    bitmask[i] = Integer(8, message[i + key_length - BITMASK_LENGTH], ALICE);
+  }
+  
   Integer digest_buf[SHA256HashSize];
   Integer* digest = digest_buf;
   EMP_HMAC_Context context;

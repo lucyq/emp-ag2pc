@@ -4,10 +4,7 @@
 using namespace std;
 using namespace emp;
 
-static int BITMASK_LENGTH = 32;
-
 const string circuit_file_location = macro_xstr(EMP_CIRCUIT_PATH);
-
 void test(int party, NetIO* io, string name, bool* in, string check_output = "") {
 	string file = name;//circuit_file_location + name;
 	CircuitFile cf(file.c_str());
@@ -48,31 +45,7 @@ int main(int argc, char** argv) {
 	int party, port;
 	char* inputVal = argv[3];
 	int inputLength = atoi(argv[4]);
-	bool* inputBits = new bool[inputLength * 8 + BITMASK_LENGTH * 8];
-	parse_party_and_port(argv, &party, &port);
-	
-	// if(party == ALICE) {
-		PRG prg;
-		bool* mask = new bool[BITMASK_LENGTH * 8]; // Should be a constant
-		
-		prg.random_bool(mask, BITMASK_LENGTH * 8);
-
-		// for(int i =0; i < BITMASK_LENGTH * 8; i ++) {
-		// 	mask[i] = false;
-		// }
-
-		cout << "Output bitmask: ";
-		for (int i = 0; i < BITMASK_LENGTH * 8; i++) {
-			inputBits[inputLength*8 + i] = mask[i];
-			cout << mask[i];
-		}
-		cout << endl;
-	// } else {
-	// 	for (int i = 0; i < BITMASK_LENGTH * 8; i++) {
-	// 		inputBits[inputLength*8 + i] = false;
-	// 	}
-	// }
-
+	bool* inputBits = new bool[inputLength*8];
 	for (int i = 0; i < inputLength; i++) {
 		bitset<8> x(inputVal[i]);
 		for(int j = 0; j < 8; j++) {
@@ -80,21 +53,16 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	cout << "Full input bits: ";
-	for (int i = 0; i < inputLength * 8; i++) {
-		cout << inputBits[i];
-	}
-	// if (party == ALICE) {
-		for (int i = 0; i < BITMASK_LENGTH * 8; i++) {
-			cout << inputBits[inputLength*8 + i];
-		}
-	// }
-	cout << endl;
 
+	// k = 256 bits
+	// input = variable length
 
+	// IV = 128 bits (random gen)
+
+	parse_party_and_port(argv, &party, &port);
 	NetIO* io = new NetIO(party==ALICE ? nullptr:IP, port);
 	io->set_nodelay();
-	test(party, io, "gc-hmac.circuit.txt", inputBits);
+	test(party, io, "../emp-tool/emp-tool/circuits/files/AES-non-expanded.txt", inputBits);
 	delete io;
 	return 0;
 }

@@ -38,6 +38,7 @@ static int INT_BITS = 16;
 static int BYTE_BITS = 8;
 static int INTERMEDIATE_HASH_BITS = 32;
 static int INTERMEDIATE_HASH_LEN = SHA256HashSize/4;
+static int BITMASK_LENGTH = 32;
 
 
 typedef struct EMP_SHA256_CONTEXT {
@@ -500,6 +501,23 @@ Integer HMAC_Result(EMP_HMAC_Context *context, Integer* digest)
   return context->Corrupted = ret;
 }
 
+void revealOutput(Integer* Message_Digest, Integer* bitmask) {
+  // cout << "bitmask " << endl;
+  // printIntegerArray(bitmask, 32, BYTE_BITS);
+
+  // cout << "Message Digest " << endl;
+  // printIntegerArray(Message_Digest, 32, BYTE_BITS);
+
+  cout << "Revealing masked output: " << endl;
+  for (int i = 0; i < SHA256HashSize; i++) {
+    Integer intToOutput = Message_Digest[i] ^ bitmask[i];
+    for (int j = 7; j >= 0; j--) {
+      cout << intToOutput[j].reveal();
+    }
+  }
+  cout << endl;
+}
+
 /* * * * * * * * * *
  *  T E S T I N G  *
  * * * * * * * * * */
@@ -567,23 +585,38 @@ void testInput(char* str, int length) {
   
 }
 
+// message is comprised of the message input to hmac concatenated with a bitmask
+// key is comprised of the key and a placeholder bitmask that is unused (since inputs must be of equal sizes for now)
 void testHmac(char* message, int message_length, char* key, int key_length) {
   /* HMAC test */
-  Integer intMsg[message_length];
-  for (int i = 0; i < message_length; i++) {
+  int actualKeyLength = key_length - BITMASK_LENGTH;
+  int actualMessageLength = message_length - BITMASK_LENGTH;
+  Integer intMsg[actualMessageLength];
+  Integer intKey[actualKeyLength];
+  Integer bitmask[BITMASK_LENGTH];
+  Integer padding[BITMASK_LENGTH];
+  Integer* mask = bitmask;
+  
+  for (int i = 0; i < actualMessageLength; i++) {
     intMsg[i] = Integer(8, message[i], ALICE);
   }
-  Integer intKey[key_length];
-  for (int i = 0; i < key_length; i++) {
+  for (int i = 0; i < BITMASK_LENGTH; i++) {
+    padding[i] = Integer(8, key[i + message_length - BITMASK_LENGTH], ALICE); // TODO: Apparently Alice is inputting the key, but labels are backwards?
+  }
+  for (int i = 0; i < actualKeyLength; i++) {
     intKey[i] = Integer(8, key[i], BOB);
+  }
+  for (int i = 0; i < BITMASK_LENGTH; i++) {
+    bitmask[i] = Integer(8, message[i + key_length - BITMASK_LENGTH], BOB);
   }
   Integer digest_buf[SHA256HashSize];
   Integer* digest = digest_buf;
   EMP_HMAC_Context context;
-  HMAC_Reset(&context, intKey, key_length);
-  HMAC_Input(&context, intMsg, message_length);
+  HMAC_Reset(&context, intKey, actualKeyLength);
+  HMAC_Input(&context, intMsg, message_length - BITMASK_LENGTH);
   HMAC_Result(&context, digest);
-  printHash(digest);
+  //printHash(digest);
+  revealOutput(digest, mask);
   // printIntegerArray(digest, SHA256HashSize, 8);
 
   // uint8_t result[SHA256HashSize];
@@ -613,11 +646,15 @@ int main() {
   //   // testInput(input, len);
   // }
 
-   testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
-   //testHmac(allChars, 512, allChars, 512);
-  // testInput((char*)"0", 1);
+  // testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
+    testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 64,
+             (char*)"abcdefghabcdefghabcdefghabcdefgh\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 64);
+   // Output: ffd058d5a1a3ad212c4b5bae1db09d8f039e433432fe786af3eaa4c7b778b134
 
-  // testInput(allChars, 512);
+   //testHmac(allChars, 512, allChars, 512);
+   // testInput((char*)"0", 1);
+
+   // testInput(allChars, 512);
 
   finalize_plain_prot();  
   return 0;

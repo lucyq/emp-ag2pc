@@ -16,20 +16,18 @@ using namespace std;
 
 /* Define the SHA shift, rotate left, and rotate right macros */
 #define SHA256_SHR(bits,word)      ((word) >> (bits))
-#define SHA256_ROTL(bits,word)                         \
-  (((word) << (bits)) | ((word) >> (32-(bits))))
-#define SHA256_ROTR(bits,word)                         \
-  (((word) >> (bits)) | ((word) << (32-(bits))))
+// #define SHA256_ROTR(bits,word)                         
+//   (((word) >> (bits)) | ((word) << (32-(bits))))
 
 /* Define the SHA SIGMA and sigma macros */
-#define SHA256_SIGMA0(word)   \
-  (SHA256_ROTR( 2,word) ^ SHA256_ROTR(13,word) ^ SHA256_ROTR(22,word))
-#define SHA256_SIGMA1(word)   \
-  (SHA256_ROTR( 6,word) ^ SHA256_ROTR(11,word) ^ SHA256_ROTR(25,word))
-#define SHA256_sigma0(word)   \
-  (SHA256_ROTR( 7,word) ^ SHA256_ROTR(18,word) ^ SHA256_SHR( 3,word))
-#define SHA256_sigma1(word)   \
-  (SHA256_ROTR(17,word) ^ SHA256_ROTR(19,word) ^ SHA256_SHR(10,word))
+// #define SHA256_SIGMA0(word)   
+  // (SHA256_ROTR( 2,word) ^ SHA256_ROTR(13,word) ^ SHA256_ROTR(22,word))
+// #define SHA256_SIGMA1(word)   
+//   (SHA256_ROTR( 6,word) ^ SHA256_ROTR(11,word) ^ SHA256_ROTR(25,word))
+// #define SHA256_sigma0(word)   
+//   (SHA256_ROTR( 7,word) ^ SHA256_ROTR(18,word) ^ SHA256_SHR( 3,word))
+// #define SHA256_sigma1(word)   
+//   (SHA256_ROTR(17,word) ^ SHA256_ROTR(19,word) ^ SHA256_SHR(10,word))
 
 static int LENGTH_BITS = 32;
 static int MESSAGE_BLOCK_INDEX_BITS = 16;
@@ -76,6 +74,30 @@ Integer k_opad[SHA256_Message_Block_Size];
   int blockSize;
 
 } EMP_HMAC_Context;
+
+Integer rotateInteger(int shift, Integer word) {
+  Integer returnInteger = Integer(word.length, 0, PUBLIC);
+  for(int i = 0; i < word.length; i++) {
+    returnInteger[i] = word[(i+shift)%word.length];
+  }
+  return returnInteger;
+}
+
+Integer SHA256_SIGMA0_(Integer word) {
+ return rotateInteger(2, word) ^ rotateInteger(13, word) ^ rotateInteger(22,word);
+}
+
+Integer SHA256_SIGMA1_(Integer word) {
+ return rotateInteger(6, word) ^ rotateInteger(11, word) ^ rotateInteger(25,word);
+}
+
+Integer SHA256_sigma0(Integer word) {
+ return rotateInteger(7, word) ^ rotateInteger(18, word) ^ SHA256_SHR( 3,word);
+}
+
+Integer SHA256_sigma1(Integer word) {
+ return rotateInteger(17, word) ^ rotateInteger(19, word) ^ SHA256_SHR(10,word);
+}
 
 void initIntegerArray(Integer* intArray, int arraySize, int bitSize, int party=PUBLIC) {
   for(int i=0; i<arraySize; i++) {
@@ -247,8 +269,8 @@ static void SHA256_ProcessMessageBlock(EMP_SHA256_CONTEXT *context) {
     H = context->Intermediate_Hash[7];
   }
   for (t = 0; t < 64; t++) {
-    temp1 = H + SHA256_SIGMA1(E) + SHA_Ch(E,F,G) + EMP_K[t] + W[t];
-    temp2 = SHA256_SIGMA0(A) + SHA_Maj(A,B,C);
+    temp1 = H + SHA256_SIGMA1_(E) + SHA_Ch(E,F,G) + EMP_K[t] + W[t];
+    temp2 = SHA256_SIGMA0_(A) + SHA_Maj(A,B,C);
     H = G;
     G = F;
     F = E;
@@ -625,17 +647,18 @@ void testHmac(char* message, int message_length, char* key, int key_length) {
   // compareHash(result, digest);
 }
 
+
 int main() {
 
-  setup_plain_prot(true, "gc-hmac.circuit.txt");
+  setup_plain_prot(true, "gc-sha.circuit.txt");
 
-  // char allChars[512];
-  // for (int thisChar = 0; thisChar < 512; thisChar++) {
-  //   allChars[thisChar] = thisChar%256;
-  // }
-  // testInput((char*)"abc", 3);
+//   char allChars[512];
+//  for (int thisChar = 0; thisChar < 512; thisChar++) {
+ //   allChars[thisChar] = thisChar%256;
+ // }
+  testInput((char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
   // testInput((char*)"Hello, world!", 12);
-  // testInput(allChars, 256);
+//  testInput(allChars, 256);
 
   // int num = 32;
   // for (int len = num; len <= num; len++) {
@@ -648,8 +671,8 @@ int main() {
   // }
 
   // testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
-    testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 64,
-             (char*)"abcdefghabcdefghabcdefghabcdefgh\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 64);
+  // testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32,
+   //          (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
    // Output: ffd058d5a1a3ad212c4b5bae1db09d8f039e433432fe786af3eaa4c7b778b134
 
    //testHmac(allChars, 512, allChars, 512);
@@ -660,4 +683,3 @@ int main() {
   finalize_plain_prot();  
   return 0;
 }
-

@@ -36,3 +36,5 @@ cmake_install.cmake
 *.app
 
 perf.data*
+.DS_Store
+test/m_*

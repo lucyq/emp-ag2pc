@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
 
 	NetIO* io = new NetIO(party==ALICE ? nullptr:IP, port);
 	io->set_nodelay();
-	test(party, io, "gc-sha.circuit.txt", inputBits);
+	test(party, io, "gc-hmac.circuit.txt", inputBits);
 	delete io;
 	return 0;
 }

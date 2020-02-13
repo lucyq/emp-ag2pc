@@ -650,15 +650,15 @@ void testHmac(char* message, int message_length, char* key, int key_length) {
 
 int main() {
 
-  setup_plain_prot(true, "gc-sha.circuit.txt");
+  setup_plain_prot(true, "gc-test.circuit.txt");
 
 //   char allChars[512];
 //  for (int thisChar = 0; thisChar < 512; thisChar++) {
  //   allChars[thisChar] = thisChar%256;
  // }
-  testInput((char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
+//  testInput((char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
   // testInput((char*)"Hello, world!", 12);
-//  testInput(allChars, 256);
+  //  testInput(allChars, 256);
 
   // int num = 32;
   // for (int len = num; len <= num; len++) {
@@ -670,9 +670,8 @@ int main() {
   //   // testInput(input, len);
   // }
 
-  // testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
-  // testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32,
-   //          (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
+  //testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
+   testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
    // Output: ffd058d5a1a3ad212c4b5bae1db09d8f039e433432fe786af3eaa4c7b778b134
 
    //testHmac(allChars, 512, allChars, 512);

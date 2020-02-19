@@ -669,9 +669,10 @@ int main() {
   //   //testHmac((char*) input, num, (char*) input, num);
   //   // testInput(input, len);
   // }
-
+ testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 64,
+             (char*)"abcdefghabcdefghabcdefghabcdefgh\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 64);
   //testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
-   testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
+  //  testHmac((char*)"abcdefghabcdefghabcdefghabcdefgh", 32, (char*)"abcdefghabcdefghabcdefghabcdefgh", 32);
    // Output: ffd058d5a1a3ad212c4b5bae1db09d8f039e433432fe786af3eaa4c7b778b134
 
    //testHmac(allChars, 512, allChars, 512);
